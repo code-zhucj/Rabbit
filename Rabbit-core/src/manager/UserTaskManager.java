@@ -17,8 +17,8 @@ public class UserTaskManager {
         return userTaskManager;
     }
 
-    public <T> void execute(UserRunnable<T> userRunnable) {
-        this.userThreadPoolExecutor.execute(userRunnable);
+    public <T> void execute(UserRunnable userRunnable) {
+//        this.userThreadPoolExecutor.execute(userRunnable);
     }
 
     public <V> V submit() {
