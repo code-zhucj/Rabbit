@@ -2,6 +2,8 @@ package module;
 
 /**
  * 模块接口
+ *
+ * @author zhuchuanji
  */
 public interface Module {
 

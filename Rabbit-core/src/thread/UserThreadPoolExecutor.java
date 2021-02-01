@@ -62,7 +62,7 @@ public class UserThreadPoolExecutor extends AbstractExecutorService implements U
     }
 
     @Override
-    public void submit(UserRunnable userRunnable) {
+    public void submit(UserTask userRunnable) {
         String userId = userRunnable.getUserId();
         BlockingQueue<Runnable> queue = USERS_TASK.computeIfAbsent(userId, v -> createQueueAndStartThread(userId));
         queue.offer(userRunnable);

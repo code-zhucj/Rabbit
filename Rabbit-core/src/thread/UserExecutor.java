@@ -8,7 +8,7 @@ public interface UserExecutor {
     /**
      * 提交任务
      *
-     * @param userRunnable
+     * @param userTask
      */
-    void submit(UserRunnable userRunnable);
+    <R> void submit(UserTask<R> userTask);
 }

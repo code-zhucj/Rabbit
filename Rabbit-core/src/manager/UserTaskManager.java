@@ -11,7 +11,7 @@ public class UserTaskManager {
 
     private static final UserTaskManager userTaskManager = new UserTaskManager();
 
-    private UserThreadPoolExecutor userThreadPoolExecutor = UserThreadPoolExecutor.getInstance();
+//    private UserThreadPoolExecutor userThreadPoolExecutor = UserThreadPoolExecutor.getInstance();
 
     public static UserTaskManager getInstance() {
         return userTaskManager;
