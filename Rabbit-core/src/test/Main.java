@@ -22,15 +22,14 @@ public class Main {
 
     private static final int MAX_USER = 100;
 
-    private static final int MAX_TASK = 1000;
+    private static final int MAX_TASK = 100;
 
     public static void main(String[] args) throws InterruptedException {
-        Map<Integer, User> users = createUsers();
-        noLockTask(users);
-        lockTask(users);
+        noLockTask(createUsers());
+        lockTask(createUsers());
     }
     private static void noLockTask(Map<Integer, User> users) {
-        ThreadPoolExecutor threadPoolExecutor = new ThreadPoolExecutor(9, 100, 10, TimeUnit.SECONDS,
+        ThreadPoolExecutor threadPoolExecutor = new ThreadPoolExecutor(200, 1000, 10, TimeUnit.SECONDS,
                 new LinkedTransferQueue<>(), v -> new Thread(v, "work"));
         UserThreadManager userThreadManager = new UserThreadManager(threadPoolExecutor, MAX_USER, MAX_TASK);
         userThreadManager.start();
@@ -38,13 +37,13 @@ public class Main {
         long start = System.currentTimeMillis();
         usersTasks.forEach(userThreadManager::submit);
         userThreadManager.shotdown();
-        System.out.println("执行耗时： " + (System.currentTimeMillis() - start));
-        users.values().forEach(System.out::println);
+        System.out.println("noLock执行耗时： " + (System.currentTimeMillis() - start));
+        print(users);
     }
 
 
     private static void lockTask(Map<Integer, User> users) {
-        ThreadPoolExecutor threadPoolExecutor = new ThreadPoolExecutor(9, 100, 10, TimeUnit.SECONDS,
+        ThreadPoolExecutor threadPoolExecutor = new ThreadPoolExecutor(200, 1000, 10, TimeUnit.SECONDS,
                 new LinkedTransferQueue<>(), v -> new Thread(v, "work"));
         Set<UserTask<Boolean>> usersTasks = createUsersTasks(LockTask::new, users);
         long start = System.currentTimeMillis();
@@ -52,8 +51,16 @@ public class Main {
         threadPoolExecutor.shutdown();
         while (!threadPoolExecutor.isTerminated()) {
         }
-        System.out.println("执行耗时： " + (System.currentTimeMillis() - start));
-        users.values().forEach(System.out::println);
+        System.out.println("lock执行耗时： " + (System.currentTimeMillis() - start));
+        print(users);
+    }
+
+    private static void print(Map<Integer, User> users){
+        users.values().forEach(v->{
+            if(v.count != 100){
+                System.err.println(v);
+            }
+        });
     }
 
     private static Set<UserTask<Boolean>> createUsersTasks(Function<User, Runnable> function, Map<Integer, User> users) {

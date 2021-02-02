@@ -26,7 +26,7 @@ public final class UserThreadManager implements UserExecutor, Module {
 
     private final int corePoolSize;
 
-    private static long aliveTime = 0;
+    private static long aliveTime = 10;
 
     private ThreadPoolExecutor threadPoolExecutor;
 
@@ -62,11 +62,10 @@ public final class UserThreadManager implements UserExecutor, Module {
 
     @Override
     public void destroy() {
-        System.out.println("用户线程池已关闭");
     }
 
     private ThreadTask newThreadTask() {
-        return new ThreadTask(new LinkedTransferQueue<>(), System.currentTimeMillis(), false);
+        return new ThreadTask(new LinkedBlockingQueue<>(), System.currentTimeMillis(), false);
     }
 
     public void shotdown() {
@@ -101,6 +100,7 @@ public final class UserThreadManager implements UserExecutor, Module {
                     }
                 }
             }
+            System.out.println(usersTasks);
             cd.countDown();
         }
 
