@@ -7,8 +7,12 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.LinkedTransferQueue;
 import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.locks.LockSupport;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * 用户线程管理器
@@ -22,13 +26,15 @@ public final class UserThreadManager implements UserExecutor, Module {
 
     private final int corePoolSize;
 
-    private static long aliveTime = 60 * 60 * 1000;
+    private static long aliveTime = 0;
 
     private ThreadPoolExecutor threadPoolExecutor;
 
     private Map<String, ThreadTask> usersTasks;
 
-    private Runnable checkTask;
+    private CheckTask checkTask;
+
+    private CountDownLatch cd = new CountDownLatch(1);
 
     public UserThreadManager(ThreadPoolExecutor threadPoolExecutor, int maxUser, int corePoolSize) {
         this.threadPoolExecutor = threadPoolExecutor;
@@ -56,11 +62,21 @@ public final class UserThreadManager implements UserExecutor, Module {
 
     @Override
     public void destroy() {
-
+        System.out.println("用户线程池已关闭");
     }
 
     private ThreadTask newThreadTask() {
-        return new ThreadTask(new LinkedBlockingQueue<>(), System.currentTimeMillis(), false);
+        return new ThreadTask(new LinkedTransferQueue<>(), System.currentTimeMillis(), false);
+    }
+
+    public void shotdown() {
+        this.checkTask.setRunning(false);
+        try {
+            cd.await();
+            threadPoolExecutor.shutdown();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
     }
 
     private class CheckTask implements Runnable {
@@ -85,14 +101,15 @@ public final class UserThreadManager implements UserExecutor, Module {
                     }
                 }
             }
+            cd.countDown();
         }
 
         private boolean isRunning() {
             return running;
         }
 
-        private synchronized boolean setRunning(boolean running) {
-            return running;
+        private synchronized void setRunning(boolean running) {
+            this.running = running;
         }
     }
 

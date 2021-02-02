@@ -17,25 +17,6 @@ import java.util.concurrent.TimeUnit;
 public class ModuleActuator {
 
     public void start() {
-        ThreadPoolExecutor threadPoolExecutor = new ThreadPoolExecutor(9, 100, 10, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
-        UserThreadManager userThreadManager = new UserThreadManager(threadPoolExecutor, 100, 1000);
-        userThreadManager.start();
-        User user = new User();
-        userThreadManager.submit(new UserTask<Object>(() -> {
-            user.age++;
-            System.out.println("user" + user.age);
-        }) {
-            @Override
-            public String getUserId() {
-                return "张三";
-            }
-        });
-        try {
-            Thread.sleep(1000);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-
         // 注解解析器
     }
 
