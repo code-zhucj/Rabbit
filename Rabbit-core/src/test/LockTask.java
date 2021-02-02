@@ -12,13 +12,9 @@ public class LockTask implements Runnable {
 
     @Override
     public void run() {
-        try {
-            this.user.lock.lock();
-            Thread.sleep(2);
-            this.user.count++;
-            this.user.lock.unlock();
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
+        this.user.lock.lock();
+        Main.sleep();
+        this.user.count++;
+        this.user.lock.unlock();
     }
 }

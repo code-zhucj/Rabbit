@@ -12,6 +12,7 @@ import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.LinkedTransferQueue;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.LockSupport;
@@ -20,9 +21,9 @@ import java.util.function.Supplier;
 
 public class Main {
 
-    private static final int MAX_USER = 100;
+    private static final int MAX_USER = 1000;
 
-    private static final int MAX_TASK = 100;
+    private static final int MAX_TASK = 10000;
 
     public static void main(String[] args) throws InterruptedException {
         noLockTask(createUsers());
@@ -57,7 +58,7 @@ public class Main {
 
     private static void print(Map<Integer, User> users){
         users.values().forEach(v->{
-            if(v.count != 100){
+            if(v.count != MAX_TASK){
                 System.err.println(v);
             }
         });
@@ -85,5 +86,15 @@ public class Main {
             users.put(i + 1, new User(i + 1, 0));
         }
         return users;
+    }
+
+    public static void sleep() {
+        long sleep = ThreadLocalRandom.current().nextLong(20);
+        sleep = 2;
+        try {
+            Thread.sleep(sleep);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
     }
 }

@@ -13,12 +13,8 @@ public class NoLockTask implements Runnable {
 
     @Override
     public void run() {
-        try {
-            Thread.sleep(2);
-            this.user.count++;
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
+        Main.sleep();
+        this.user.count++;
     }
 
 }
