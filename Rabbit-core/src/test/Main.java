@@ -1,80 +1,81 @@
 package test;
 
+import thread.ThreadManager;
 import thread.UserTask;
-import thread.UserThreadManager;
 
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.LinkedTransferQueue;
-import java.util.concurrent.ThreadLocalRandom;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.LockSupport;
+import java.util.function.Consumer;
 import java.util.function.Function;
-import java.util.function.Supplier;
 
 public class Main {
 
-    private static final int MAX_USER = 1000;
+    private static final int MAX_USER = 100;
 
-    private static final int MAX_TASK = 10000;
+    private static final int MAX_TASK = 1000;
 
-    public static void main(String[] args) throws InterruptedException {
-        noLockTask(createUsers());
-        lockTask(createUsers());
+    public static void main(String[] args) {
+        long lockCostTime = executeTime(Main::lockTask, createUsers());
+        long noLockCostTime = executeTime(Main::noLockTask, createUsers());
+        printResult(lockCostTime, noLockCostTime);
     }
+
     private static void noLockTask(Map<Integer, User> users) {
-        ThreadPoolExecutor threadPoolExecutor = new ThreadPoolExecutor(200, 1000, 10, TimeUnit.SECONDS,
-                new LinkedTransferQueue<>(), v -> new Thread(v, "work"));
-        UserThreadManager userThreadManager = new UserThreadManager(threadPoolExecutor, MAX_USER, MAX_TASK);
-        userThreadManager.start();
-        Set<UserTask<Boolean>> usersTasks = createUsersTasks(NoLockTask::new, users);
-        long start = System.currentTimeMillis();
-        usersTasks.forEach(userThreadManager::submit);
-        userThreadManager.shotdown();
-        System.out.println("noLock执行耗时： " + (System.currentTimeMillis() - start));
+        List<UserTask<Boolean>> usersTasks = createUsersTasks(NoLockTask::new, users);
+        usersTasks.forEach(v -> ThreadManager.USER.commit(v.getId(), v));
+        ThreadManager.USER.shutdown();
         print(users);
+    }
+
+    private static void printResult(long lockCostTime, long noLockCostTime) {
+        System.out.println();
+        System.out.println("noLock 执行耗时：" + noLockCostTime + " ms");
+        System.out.println("lock 执行耗时：" + lockCostTime + " ms");
+        float percent =
+                (float) ((noLockCostTime > lockCostTime ? (double) noLockCostTime / lockCostTime :
+                        (double) lockCostTime / noLockCostTime) - 1D) * 100;
+        String fast = noLockCostTime < lockCostTime ? "noLock" : "lock";
+        String slow = noLockCostTime < lockCostTime ? "lock" : "noLock";
+        System.out.println(fast + " 效率比 " + slow + " 提高了 " + percent + " %");
+        System.out.println();
     }
 
 
     private static void lockTask(Map<Integer, User> users) {
-        ThreadPoolExecutor threadPoolExecutor = new ThreadPoolExecutor(200, 1000, 10, TimeUnit.SECONDS,
-                new LinkedTransferQueue<>(), v -> new Thread(v, "work"));
-        Set<UserTask<Boolean>> usersTasks = createUsersTasks(LockTask::new, users);
-        long start = System.currentTimeMillis();
-        usersTasks.forEach(threadPoolExecutor::execute);
-        threadPoolExecutor.shutdown();
-        while (!threadPoolExecutor.isTerminated()) {
+        List<UserTask<Boolean>> usersTasks = createUsersTasks(LockTask::new, users);
+        usersTasks.forEach(ThreadManager.SYSTEM::execute);
+        ThreadManager.SYSTEM.shutdown();
+        while (true) {
+            if (ThreadManager.SYSTEM.isTerminated()) {
+                break;
+            }
         }
-        System.out.println("lock执行耗时： " + (System.currentTimeMillis() - start));
         print(users);
     }
 
-    private static void print(Map<Integer, User> users){
-        users.values().forEach(v->{
-            if(v.count != MAX_TASK){
-                System.err.println(v);
+    private static long executeTime(Consumer<Map<Integer, User>> consumer, Map<Integer, User> users) {
+        long start = System.currentTimeMillis();
+        consumer.accept(users);
+        long end = System.currentTimeMillis();
+        return end - start;
+    }
+
+    private static void print(Map<Integer, User> users) {
+        users.values().forEach(v -> {
+            if (v.count != MAX_TASK) {
+                System.out.println(v);
             }
         });
     }
 
-    private static Set<UserTask<Boolean>> createUsersTasks(Function<User, Runnable> function, Map<Integer, User> users) {
-        Set<UserTask<Boolean>> userTasks = new HashSet<>((int) (MAX_USER * MAX_TASK / 0.75F) + 1);
+    private static List<UserTask<Boolean>> createUsersTasks(Function<User, Runnable> function, Map<Integer, User> users) {
+        List<UserTask<Boolean>> userTasks = new LinkedList<>();
         for (int i = 0; i < MAX_USER; i++) {
             int id = i + 1;
             for (int j = 0; j < MAX_TASK; j++) {
-                userTasks.add(new UserTask<Boolean>(function.apply(users.get(id))) {
-                    @Override
-                    public String getUserId() {
-                        return String.valueOf(id);
-                    }
-                });
+                userTasks.add(new UserTask<Boolean>(id, function.apply(users.get(id))));
             }
         }
         return userTasks;
@@ -89,8 +90,7 @@ public class Main {
     }
 
     public static void sleep() {
-        long sleep = ThreadLocalRandom.current().nextLong(20);
-        sleep = 2;
+        long sleep = 5;
         try {
             Thread.sleep(sleep);
         } catch (InterruptedException e) {

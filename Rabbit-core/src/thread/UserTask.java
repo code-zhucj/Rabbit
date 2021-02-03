@@ -2,10 +2,7 @@ package thread;
 
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executor;
-import java.util.concurrent.Executors;
 import java.util.concurrent.FutureTask;
-import java.util.concurrent.RunnableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
@@ -14,28 +11,28 @@ import java.util.concurrent.TimeoutException;
  *
  * @author zhuchuanji
  */
-public abstract class UserTask<V> implements RunnableFuture<V> {
+public class UserTask<V> implements UserFutureTask<V> {
 
     FutureTask<V> futureTask;
+
+    private int id;
 
     public UserTask(Callable<V> callable) {
         this.futureTask = new FutureTask<>(callable);
     }
 
-    public UserTask(Runnable runnable) {
+    public UserTask(int id, Runnable runnable) {
         this.futureTask = new FutureTask<>(runnable, null);
+        this.id = id;
     }
 
     public UserTask(Runnable runnable, V result) {
         this.futureTask = new FutureTask<>(runnable, result);
     }
 
-    /**
-     * 获取用户id
-     *
-     * @return userId
-     */
-    public abstract String getUserId();
+    public int getId() {
+        return id;
+    }
 
     @Override
     public void run() {

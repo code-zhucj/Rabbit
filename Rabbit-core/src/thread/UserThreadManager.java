@@ -6,12 +6,14 @@ import util.CollectionUtils;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.FutureTask;
 import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.LinkedTransferQueue;
 import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.locks.LockSupport;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
@@ -26,15 +28,13 @@ public final class UserThreadManager implements UserExecutor, Module {
 
     private final int corePoolSize;
 
-    private static long aliveTime = 10;
+    private final static long aliveTime = 0;
 
-    private ThreadPoolExecutor threadPoolExecutor;
+    private final ThreadPoolExecutor threadPoolExecutor;
 
-    private Map<String, ThreadTask> usersTasks;
+    private Map<Object, ThreadTask> usersTasks;
 
     private CheckTask checkTask;
-
-    private CountDownLatch cd = new CountDownLatch(1);
 
     public UserThreadManager(ThreadPoolExecutor threadPoolExecutor, int maxUser, int corePoolSize) {
         this.threadPoolExecutor = threadPoolExecutor;
@@ -42,11 +42,11 @@ public final class UserThreadManager implements UserExecutor, Module {
         this.corePoolSize = corePoolSize;
     }
 
+
     @Override
-    public <R> void submit(UserTask<R> userTask) {
-        String userId = userTask.getUserId();
-        ThreadTask threadTask = usersTasks.computeIfAbsent(userId, v -> this.newThreadTask());
-        threadTask.queue.offer(userTask);
+    public <I, R> void submit(I id, UserFutureTask<R> userTask) {
+        ThreadTask threadTask = usersTasks.computeIfAbsent(id, v -> this.newThreadTask());
+        threadTask.offer(userTask);
     }
 
     @Override
@@ -56,25 +56,26 @@ public final class UserThreadManager implements UserExecutor, Module {
     }
 
     @Override
-    public void execute() {
+    public void process() {
         threadPoolExecutor.execute(checkTask);
     }
 
     @Override
     public void destroy() {
+        shutdown();
     }
 
     private ThreadTask newThreadTask() {
-        return new ThreadTask(new LinkedBlockingQueue<>(), System.currentTimeMillis(), false);
+        return new ThreadTask(new LinkedBlockingQueue<>(), false, System.currentTimeMillis());
     }
 
-    public void shotdown() {
-        this.checkTask.setRunning(false);
-        try {
-            cd.await();
-            threadPoolExecutor.shutdown();
-        } catch (InterruptedException e) {
-            e.printStackTrace();
+    public void shutdown() {
+        this.checkTask.close();
+        threadPoolExecutor.shutdown();
+        while (true) {
+            if (threadPoolExecutor.isTerminated()) {
+                break;
+            }
         }
     }
 
@@ -85,63 +86,82 @@ public final class UserThreadManager implements UserExecutor, Module {
         @Override
         public void run() {
             while (isRunning() || CollectionUtils.isNotEmpty(usersTasks)) {
-                long currentTime = System.currentTimeMillis();
-                Iterator<Map.Entry<String, ThreadTask>> iterator = usersTasks.entrySet().iterator();
+                Iterator<ThreadTask> iterator = usersTasks.values().iterator();
                 while (iterator.hasNext()) {
-                    ThreadTask threadTask = iterator.next().getValue();
+                    ThreadTask threadTask = iterator.next();
                     if (!threadTask.isOccupationStatus()) {
                         if (threadTask.queue.size() > 0) {
                             threadTask.setOccupationStatus(true);
-                            threadTask.setTime(System.currentTimeMillis());
                             threadPoolExecutor.execute(threadTask);
-                        } else if (currentTime - threadTask.getTime() >= aliveTime) {
-                            iterator.remove();
+                        } else {
+                            threadTask.remove(iterator);
                         }
                     }
                 }
             }
-            System.out.println(usersTasks);
-            cd.countDown();
         }
 
         private boolean isRunning() {
             return running;
         }
 
-        private synchronized void setRunning(boolean running) {
-            this.running = running;
+        private synchronized void close() {
+            this.running = false;
         }
     }
 
 
     private static class ThreadTask implements Runnable {
 
-        private BlockingQueue<UserTask<?>> queue;
-
-        private long time;
+        private final BlockingQueue<UserFutureTask<?>> queue;
 
         private boolean occupationStatus;
 
-        private ThreadTask(BlockingQueue<UserTask<?>> queue, long time, boolean occupationStatus) {
+        private long time;
+
+        private ReentrantLock lock = new ReentrantLock();
+
+        private ThreadTask(BlockingQueue<UserFutureTask<?>> queue, boolean occupationStatus, long time) {
             this.queue = queue;
-            this.time = time;
             this.occupationStatus = occupationStatus;
+            this.time = time;
         }
 
-        public boolean isOccupationStatus() {
+        public synchronized boolean isOccupationStatus() {
             return occupationStatus;
         }
 
-        public synchronized void setOccupationStatus(boolean occupationStatus) {
+        public void setOccupationStatus(boolean occupationStatus) {
             this.occupationStatus = occupationStatus;
         }
 
         public long getTime() {
-            return time;
+            return this.time;
         }
 
         public void setTime(long time) {
             this.time = time;
+        }
+
+        public void offer(UserFutureTask<?> threadTask) {
+            try {
+                lock.lock();
+                queue.offer(threadTask);
+                setTime(System.currentTimeMillis());
+            } finally {
+                lock.unlock();
+            }
+        }
+
+        public void remove(Iterator<ThreadTask> iterator) {
+            try {
+                lock.lock();
+                if (System.currentTimeMillis() - getTime() >= aliveTime) {
+                    iterator.remove();
+                }
+            } finally {
+                lock.unlock();
+            }
         }
 
         @Override
@@ -151,7 +171,7 @@ public final class UserThreadManager implements UserExecutor, Module {
         }
 
         private void process() {
-            UserTask<?> userTask;
+            UserFutureTask<?> userTask;
             try {
                 while ((userTask = queue.poll()) != null) {
                     userTask.run();
@@ -159,6 +179,58 @@ public final class UserThreadManager implements UserExecutor, Module {
             } catch (Exception e) {
                 e.printStackTrace();
             }
+        }
+    }
+
+    /**
+     * 用户任务
+     *
+     * @author zhuchuanji
+     */
+    private static class UserTask<V> implements UserFutureTask<V> {
+
+        private FutureTask<V> futureTask;
+
+        public UserTask(Callable<V> callable) {
+            this.futureTask = new FutureTask<>(callable);
+        }
+
+        public UserTask(Runnable runnable) {
+            this.futureTask = new FutureTask<>(runnable, null);
+        }
+
+        public UserTask(Runnable runnable, V result) {
+            this.futureTask = new FutureTask<>(runnable, result);
+        }
+
+        @Override
+        public void run() {
+            this.futureTask.run();
+        }
+
+        @Override
+        public final V get() throws ExecutionException, InterruptedException {
+            return this.futureTask.get();
+        }
+
+        @Override
+        public final V get(long timeout, TimeUnit unit) throws ExecutionException, InterruptedException, TimeoutException {
+            return this.futureTask.get(timeout, unit);
+        }
+
+        @Override
+        public final boolean cancel(boolean mayInterruptIfRunning) {
+            return this.futureTask.cancel(mayInterruptIfRunning);
+        }
+
+        @Override
+        public final boolean isCancelled() {
+            return this.futureTask.isCancelled();
+        }
+
+        @Override
+        public final boolean isDone() {
+            return this.futureTask.isDone();
         }
     }
 

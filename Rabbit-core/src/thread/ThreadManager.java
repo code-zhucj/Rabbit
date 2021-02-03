@@ -1,18 +1,6 @@
 package thread;
 
-import javafx.concurrent.Worker;
-import manager.UserThread;
-import module.Module;
-
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.AbstractExecutorService;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executor;
-import java.util.concurrent.LinkedBlockingDeque;
+import java.util.concurrent.LinkedTransferQueue;
 import java.util.concurrent.RejectedExecutionHandler;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -23,65 +11,64 @@ import java.util.concurrent.TimeUnit;
  *
  * @author zhuchuanji
  */
-public final class ThreadManager implements Module {
+public final class ThreadManager {
 
-    protected static int corePoolSize;
-    protected static int maximumPoolSize;
-    protected static long keepAliveTime;
-    protected static TimeUnit unit;
-    protected static BlockingQueue<Runnable> workQueue;
-    protected static ThreadFactory threadFactory;
-    protected static RejectedExecutionHandler handler;
+    protected static int corePoolSize = 200;
+    protected static int maximumPoolSize = 1000;
+    protected static long keepAliveTime = 60;
+    protected static int maxUser;
+    protected static int aliveTime;
+    protected static TimeUnit unit = TimeUnit.SECONDS;
+    protected static RejectedExecutionHandler handler = new ThreadPoolExecutor.AbortPolicy();
+    public static final UserThreadPoolExecutor USER;
+    public static ThreadPoolExecutor SYSTEM;
 
-
-    private ThreadPoolExecutor threadPoolExecutor;
-
-    public static ThreadPoolExecutor createThreadPool() {
-        return null;
+    static {
+        SYSTEM = new ThreadPoolExecutor(corePoolSize, maximumPoolSize, keepAliveTime, unit, new LinkedTransferQueue<>(),
+                createThreadFactory("system", false), handler);
+        USER = new UserThreadPoolExecutor(corePoolSize, maximumPoolSize, keepAliveTime, unit, new LinkedTransferQueue<>(),
+                createThreadFactory("user", false), handler);
     }
 
-    @Override
-    public void init() {
-        threadPoolExecutor = new ThreadPoolExecutor(corePoolSize, maximumPoolSize, keepAliveTime, unit, workQueue,
-                threadFactory, handler);
-        threadPoolExecutor.execute(() -> {
-        });
-//        new UserThreadExecutor("", new ArrayBlockingQueue<>(10)).start();
-//        ThreadPoolSelector.USER.submit(() -> {
-//        });
+    /**
+     * 创建线程工厂
+     *
+     * @param executorName 线程归属名称
+     * @param daemon       是否为守护线程
+     * @return threadFactory
+     */
+    private static ThreadFactory createThreadFactory(String executorName, boolean daemon) {
+        return r -> new Worker(executorName, daemon, r);
     }
 
-    @Override
-    public void execute() {
-
+    /**
+     * 关闭线程管理器，并且关闭相关的所有线程池
+     */
+    public static void shutdown() {
+        USER.shutdown();
+        SYSTEM.shutdown();
     }
 
-    @Override
-    public void destroy() {
+    /**
+     * 封装线程
+     */
+    private static class Worker extends Thread {
 
-    }
-
-    public enum ThreadPoolSelector {
-        /**
-         * 用户线程
-         */
-//        USER(r -> UserThreadManager.getManager().execute(r)),
-        /**
-         * 系统线程
-         */
-        SYSTME(r -> {
-        });
-        private final Executor executor;
-
-        ThreadPoolSelector(Executor executor) {
-            this.executor = executor;
+        private Worker(String executorName, boolean daemon, Runnable runnable) {
+            super(runnable);
+            this.setDaemon(daemon);
+            this.setName(executorName + "." + this.getId());
         }
 
-        public void submit(Runnable r) {
-            this.executor.execute(r);
+        @Override
+        public void run() {
+            try {
+                super.run();
+            } catch (Throwable e) {
+                e.printStackTrace();
+            }
         }
+
     }
-
-
 
 }
