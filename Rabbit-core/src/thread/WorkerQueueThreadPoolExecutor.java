@@ -6,26 +6,26 @@ import util.CollectionUtils;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.FutureTask;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionHandler;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.locks.LockSupport;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
- * 用戶线程池
+ * 工作队列线程池
+ *
+ * <p>
+ * 任意时刻同一任务队列只有一个线程在执行
+ * </P>
  *
  * @author zhuchuanji
  * @date 2021/2/3
  */
-public final class UserThreadPoolExecutor extends ThreadPoolExecutor implements Module {
+public final class WorkerQueueThreadPoolExecutor extends ThreadPoolExecutor implements Module {
 
     private int maxUser = 10000;
 
@@ -35,7 +35,7 @@ public final class UserThreadPoolExecutor extends ThreadPoolExecutor implements 
 
     private CheckTask checkTask;
 
-    public UserThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime, TimeUnit unit, BlockingQueue<Runnable> workQueue, ThreadFactory system, RejectedExecutionHandler handler) {
+    public WorkerQueueThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime, TimeUnit unit, BlockingQueue<Runnable> workQueue, ThreadFactory system, RejectedExecutionHandler handler) {
         super(corePoolSize, maximumPoolSize, keepAliveTime, unit, workQueue, system, handler);
         start();
     }
@@ -64,15 +64,9 @@ public final class UserThreadPoolExecutor extends ThreadPoolExecutor implements 
         LockSupport.park(shutdown);
     }
 
-    public UserFutureTask<?> commit(Object id, Runnable runnable) {
-        UserFutureTask<?> userFutureTask = newUserFutureTask(runnable);
+    public void commit(Object id, Runnable runnable) {
         ThreadTask threadTask = usersTasks.computeIfAbsent(id, v -> this.newThreadTask());
-        threadTask.offer(userFutureTask);
-        return userFutureTask;
-    }
-
-    private UserFutureTask<?> newUserFutureTask(Runnable runnable) {
-        return new UserTask<Object>(runnable);
+        threadTask.offer(runnable);
     }
 
 
@@ -86,6 +80,9 @@ public final class UserThreadPoolExecutor extends ThreadPoolExecutor implements 
         return new ThreadTask(new LinkedBlockingQueue<>(), false, System.currentTimeMillis());
     }
 
+    /**
+     * 检查任务，该任务在线程池启动时启动，负责检查过期的任务队列，当任务队列过期时将其移除
+     */
     private class CheckTask implements Runnable {
 
         private volatile boolean running = true;
@@ -120,10 +117,12 @@ public final class UserThreadPoolExecutor extends ThreadPoolExecutor implements 
         }
     }
 
-
+    /**
+     * 线程任务，负责消费任务队列中的所有任务。
+     */
     private static class ThreadTask implements Runnable {
 
-        private final BlockingQueue<UserFutureTask<?>> queue;
+        private final BlockingQueue<Runnable> queue;
 
         private boolean occupationStatus;
 
@@ -131,7 +130,7 @@ public final class UserThreadPoolExecutor extends ThreadPoolExecutor implements 
 
         private final ReentrantLock lock = new ReentrantLock();
 
-        private ThreadTask(BlockingQueue<UserFutureTask<?>> queue, boolean occupationStatus, long time) {
+        private ThreadTask(BlockingQueue<Runnable> queue, boolean occupationStatus, long time) {
             this.queue = queue;
             this.occupationStatus = occupationStatus;
             this.time = time;
@@ -153,10 +152,10 @@ public final class UserThreadPoolExecutor extends ThreadPoolExecutor implements 
             this.time = time;
         }
 
-        public void offer(UserFutureTask<?> threadTask) {
+        public void offer(Runnable runnable) {
             lock.lock();
             try {
-                queue.offer(threadTask);
+                queue.offer(runnable);
                 setTime(System.currentTimeMillis());
             } finally {
                 lock.unlock();
@@ -181,66 +180,14 @@ public final class UserThreadPoolExecutor extends ThreadPoolExecutor implements 
         }
 
         private void process() {
-            UserFutureTask<?> userTask;
+            Runnable r;
             try {
-                while ((userTask = queue.poll()) != null) {
-                    userTask.run();
+                while ((r = queue.poll()) != null) {
+                    r.run();
                 }
             } catch (Exception e) {
                 e.printStackTrace();
             }
-        }
-    }
-
-    /**
-     * 用户任务
-     *
-     * @author zhuchuanji
-     */
-    private static class UserTask<V> implements UserFutureTask<V> {
-
-        private FutureTask<V> futureTask;
-
-        public UserTask(Callable<V> callable) {
-            this.futureTask = new FutureTask<>(callable);
-        }
-
-        public UserTask(Runnable runnable) {
-            this.futureTask = new FutureTask<>(runnable, null);
-        }
-
-        public UserTask(Runnable runnable, V result) {
-            this.futureTask = new FutureTask<>(runnable, result);
-        }
-
-        @Override
-        public void run() {
-            this.futureTask.run();
-        }
-
-        @Override
-        public final V get() throws ExecutionException, InterruptedException {
-            return this.futureTask.get();
-        }
-
-        @Override
-        public final V get(long timeout, TimeUnit unit) throws ExecutionException, InterruptedException, TimeoutException {
-            return this.futureTask.get(timeout, unit);
-        }
-
-        @Override
-        public final boolean cancel(boolean mayInterruptIfRunning) {
-            return this.futureTask.cancel(mayInterruptIfRunning);
-        }
-
-        @Override
-        public final boolean isCancelled() {
-            return this.futureTask.isCancelled();
-        }
-
-        @Override
-        public final boolean isDone() {
-            return this.futureTask.isDone();
         }
     }
 }

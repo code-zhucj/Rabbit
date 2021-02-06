@@ -1,7 +1,6 @@
 package test;
 
 import thread.ThreadManager;
-import thread.UserTask;
 
 import java.util.HashMap;
 import java.util.LinkedList;
@@ -14,17 +13,26 @@ public class Main {
 
     private static final int MAX_USER = 100;
 
-    private static final int MAX_TASK = 1000;
+    private static final int MAX_TASK = 100;
 
     public static void main(String[] args) {
-        long lockCostTime = executeTime(Main::lockTask, createUsers());
-        long noLockCostTime = executeTime(Main::noLockTask, createUsers());
-        printResult(lockCostTime, noLockCostTime);
+//        long lockCostTime = executeTime(Main::lockTask, createUsers());
+//        long noLockCostTime = executeTime(Main::noLockTask, createUsers());
+//        printResult(lockCostTime, noLockCostTime);
+
+//        UserFutureTask<?> commit = ThreadManager.USER.commit(1, new NoLockTask(new User(1, 1)));
+//        try {
+//            System.out.println(commit.get());
+//        } catch (InterruptedException | ExecutionException e) {
+//            e.printStackTrace();
+//        }
     }
 
     private static void noLockTask(Map<Integer, User> users) {
-        List<UserTask<Boolean>> usersTasks = createUsersTasks(NoLockTask::new, users);
-        usersTasks.forEach(v -> ThreadManager.USER.commit(v.getId(), v));
+        List<Runnable> usersTasks = createUsersTasks(NoLockTask::new, users);
+        for (Runnable r : usersTasks) {
+            ThreadManager.USER.commit(((NoLockTask) r).getId(), r);
+        }
         ThreadManager.USER.shutdown();
         print(users);
     }
@@ -44,7 +52,7 @@ public class Main {
 
 
     private static void lockTask(Map<Integer, User> users) {
-        List<UserTask<Boolean>> usersTasks = createUsersTasks(LockTask::new, users);
+        List<Runnable> usersTasks = createUsersTasks(LockTask::new, users);
         usersTasks.forEach(ThreadManager.SYSTEM::execute);
         ThreadManager.SYSTEM.shutdown();
         while (true) {
@@ -64,18 +72,18 @@ public class Main {
 
     private static void print(Map<Integer, User> users) {
         users.values().forEach(v -> {
-            if (v.count != MAX_TASK) {
+            if (v.count == MAX_TASK) {
                 System.out.println(v);
             }
         });
     }
 
-    private static List<UserTask<Boolean>> createUsersTasks(Function<User, Runnable> function, Map<Integer, User> users) {
-        List<UserTask<Boolean>> userTasks = new LinkedList<>();
+    private static List<Runnable> createUsersTasks(Function<User, Runnable> function, Map<Integer, User> users) {
+        List<Runnable> userTasks = new LinkedList<>();
         for (int i = 0; i < MAX_USER; i++) {
             int id = i + 1;
             for (int j = 0; j < MAX_TASK; j++) {
-                userTasks.add(new UserTask<Boolean>(id, function.apply(users.get(id))));
+                userTasks.add(function.apply(users.get(id)));
             }
         }
         return userTasks;
@@ -90,7 +98,7 @@ public class Main {
     }
 
     public static void sleep() {
-        long sleep = 5;
+        long sleep = 1;
         try {
             Thread.sleep(sleep);
         } catch (InterruptedException e) {

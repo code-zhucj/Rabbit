@@ -1,10 +1,13 @@
 package thread;
 
+import java.util.List;
+import java.util.concurrent.AbstractExecutorService;
 import java.util.concurrent.LinkedTransferQueue;
 import java.util.concurrent.RejectedExecutionHandler;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * 线程管理器
@@ -20,13 +23,19 @@ public final class ThreadManager {
     protected static int aliveTime;
     protected static TimeUnit unit = TimeUnit.SECONDS;
     protected static RejectedExecutionHandler handler = new ThreadPoolExecutor.AbortPolicy();
-    public static final UserThreadPoolExecutor USER;
-    public static ThreadPoolExecutor SYSTEM;
+    public final WorkerQueueThreadPoolExecutor user;
+    public final ThreadPoolExecutor system;
 
-    static {
-        SYSTEM = new ThreadPoolExecutor(corePoolSize, maximumPoolSize, keepAliveTime, unit, new LinkedTransferQueue<>(),
+    public static final ThreadManager MANAGER = new ThreadManager();
+
+    public static ThreadManager getInstance() {
+        return MANAGER;
+    }
+
+    private ThreadManager() {
+        system = new ThreadPoolExecutor(corePoolSize, maximumPoolSize, keepAliveTime, unit, new LinkedTransferQueue<>(),
                 createThreadFactory("system", false), handler);
-        USER = new UserThreadPoolExecutor(corePoolSize, maximumPoolSize, keepAliveTime, unit, new LinkedTransferQueue<>(),
+        user = new WorkerQueueThreadPoolExecutor(corePoolSize, maximumPoolSize, keepAliveTime, unit, new LinkedTransferQueue<>(),
                 createThreadFactory("user", false), handler);
     }
 
@@ -44,9 +53,9 @@ public final class ThreadManager {
     /**
      * 关闭线程管理器，并且关闭相关的所有线程池
      */
-    public static void shutdown() {
-        USER.shutdown();
-        SYSTEM.shutdown();
+    public void shutdown() {
+        user.shutdown();
+        system.shutdown();
     }
 
     /**
@@ -69,6 +78,47 @@ public final class ThreadManager {
             }
         }
 
+    }
+
+    class ThreadPoolExecutorWrapper extends AbstractExecutorService {
+
+        private final ThreadPoolExecutor executor;
+        private final AtomicInteger running = new AtomicInteger();
+        private volatile Thread shutdownThread;
+
+        ThreadPoolExecutorWrapper(ThreadPoolExecutor executor) {
+            this.executor = executor;
+        }
+
+        @Override
+        public void shutdown() {
+            shutdownThread = Thread.currentThread();
+        }
+
+        @Override
+        public List<Runnable> shutdownNow() {
+            return null;
+        }
+
+        @Override
+        public boolean isShutdown() {
+            return false;
+        }
+
+        @Override
+        public boolean isTerminated() {
+            return false;
+        }
+
+        @Override
+        public boolean awaitTermination(long timeout, TimeUnit unit) throws InterruptedException {
+            return false;
+        }
+
+        @Override
+        public void execute(Runnable command) {
+
+        }
     }
 
 }

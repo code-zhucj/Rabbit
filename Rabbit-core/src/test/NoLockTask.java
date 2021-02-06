@@ -1,14 +1,17 @@
 package test;
 
-import java.util.List;
-import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Callable;
 
-public class NoLockTask implements Runnable {
+public class NoLockTask implements Runnable, Callable<Integer> {
 
     private User user;
 
     public NoLockTask(User user) {
         this.user = user;
+    }
+
+    public int getId(){
+        return user.id;
     }
 
     @Override
@@ -17,4 +20,9 @@ public class NoLockTask implements Runnable {
         this.user.count++;
     }
 
+    @Override
+    public Integer call() throws Exception {
+        run();
+        return user.count;
+    }
 }
